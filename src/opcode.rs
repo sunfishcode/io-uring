@@ -15,7 +15,9 @@ macro_rules! assign_fd {
             sealed::Target::Fd(fd) => $sqe.fd = fd,
             sealed::Target::Fixed(i) => {
                 $sqe.fd = i as _;
-                $sqe.flags |= crate::squeue::Flags::FIXED_FILE.bits();
+                $sqe.flags |=
+                    sys::IoringSqeFlags::from_bits(crate::squeue::Flags::FIXED_FILE.bits())
+                        .unwrap();
             }
         }
     };
@@ -74,7 +76,7 @@ macro_rules! opcode {
             /// The opcode of the operation. This can be passed to
             /// [`Probe::is_supported`](crate::Probe::is_supported) to check if this operation is
             /// supported with the current kernel.
-            pub const CODE: u8 = $opcode as _;
+            pub const CODE: sys::IoringOp = $opcode as _;
 
             $(
                 $( #[$opt_meta] )*
@@ -105,7 +107,7 @@ opcode!(
     #[derive(Debug)]
     pub struct Nop { ;; }
 
-    pub const CODE = sys::IORING_OP_NOP;
+    pub const CODE = sys::IoringOp::Nop;
 
     pub fn build(self) -> Entry {
         let Nop {} = self;
@@ -129,10 +131,10 @@ opcode!(
         offset: libc::off_t = 0,
         /// specified for read operations, contains a bitwise OR of per-I/O flags,
         /// as described in the `preadv2(2)` man page.
-        rw_flags: types::RwFlags = 0
+        rw_flags: types::RwFlags = types::RwFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_READV;
+    pub const CODE = sys::IoringOp::Readv;
 
     pub fn build(self) -> Entry {
         let Readv {
@@ -145,10 +147,10 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = iovec as _;
+        sqe.addr_or_splice_off_in.addr.ptr = iovec as _;
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.rw_flags = rw_flags;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.rw_flags = rw_flags;
         Entry(sqe)
     }
 );
@@ -165,10 +167,10 @@ opcode!(
         offset: libc::off_t = 0,
         /// specified for write operations, contains a bitwise OR of per-I/O flags,
         /// as described in the `preadv2(2)` man page.
-        rw_flags: types::RwFlags = 0
+        rw_flags: types::RwFlags = types::RwFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_WRITEV;
+    pub const CODE = sys::IoringOp::Writev;
 
     pub fn build(self) -> Entry {
         let Writev {
@@ -181,10 +183,10 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = iovec as _;
+        sqe.addr_or_splice_off_in.addr.ptr = iovec as _;
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.rw_flags = rw_flags;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.rw_flags = rw_flags;
         Entry(sqe)
     }
 );
@@ -208,7 +210,7 @@ opcode!(
         flags: types::FsyncFlags = types::FsyncFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_FSYNC;
+    pub const CODE = sys::IoringOp::Fsync;
 
     pub fn build(self) -> Entry {
         let Fsync { fd, flags } = self;
@@ -216,7 +218,7 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
-        sqe.__bindgen_anon_3.fsync_flags = flags.bits();
+        sqe.op_flags.fsync_flags = sys::IoringFsyncFlags::from_bits(flags.bits()).unwrap();
         Entry(sqe)
     }
 );
@@ -239,10 +241,10 @@ opcode!(
         ioprio: u16 = 0,
         /// specified for read operations, contains a bitwise OR of per-I/O flags,
         /// as described in the `preadv2(2)` man page.
-        rw_flags: types::RwFlags = 0
+        rw_flags: types::RwFlags = types::RwFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_READ_FIXED;
+    pub const CODE = sys::IoringOp::ReadFixed;
 
     pub fn build(self) -> Entry {
         let ReadFixed {
@@ -256,11 +258,11 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = buf as _;
+        sqe.addr_or_splice_off_in.addr.ptr = buf as _;
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.rw_flags = rw_flags;
-        sqe.__bindgen_anon_4.buf_index = buf_index;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.rw_flags = rw_flags;
+        sqe.buf.buf_index = buf_index;
         Entry(sqe)
     }
 );
@@ -283,10 +285,10 @@ opcode!(
         offset: libc::off_t = 0,
         /// specified for write operations, contains a bitwise OR of per-I/O flags,
         /// as described in the `preadv2(2)` man page.
-        rw_flags: types::RwFlags = 0
+        rw_flags: types::RwFlags = types::RwFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_WRITE_FIXED;
+    pub const CODE = sys::IoringOp::WriteFixed;
 
     pub fn build(self) -> Entry {
         let WriteFixed {
@@ -300,11 +302,11 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = buf as _;
+        sqe.addr_or_splice_off_in.addr.ptr = buf as _;
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.rw_flags = rw_flags;
-        sqe.__bindgen_anon_4.buf_index = buf_index;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.rw_flags = rw_flags;
+        sqe.buf.buf_index = buf_index;
         Entry(sqe)
     }
 );
@@ -323,7 +325,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_POLL_ADD;
+    pub const CODE = sys::IoringOp::PollAdd;
 
     pub fn build(self) -> Entry {
         let PollAdd { fd, flags } = self;
@@ -333,14 +335,14 @@ opcode!(
         assign_fd!(sqe.fd = fd);
 
         #[cfg(target_endian = "little")] {
-            sqe.__bindgen_anon_3.poll32_events = flags;
+            sqe.op_flags.poll32_events = flags;
         }
 
         #[cfg(target_endian = "big")] {
             let x = flags << 16;
             let y = flags >> 16;
             let flags = x | y;
-            sqe.__bindgen_anon_3.poll32_events = flags;
+            sqe.op_flags.poll32_events = flags;
         }
 
         Entry(sqe)
@@ -358,7 +360,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_POLL_REMOVE;
+    pub const CODE = sys::IoringOp::PollRemove;
 
     pub fn build(self) -> Entry {
         let PollRemove { user_data } = self;
@@ -366,7 +368,7 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = -1;
-        sqe.__bindgen_anon_2.addr = user_data as _;
+        sqe.addr_or_splice_off_in.addr.ptr = user_data as _;
         Entry(sqe)
     }
 );
@@ -384,7 +386,7 @@ opcode!(
         flags: u32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_SYNC_FILE_RANGE;
+    pub const CODE = sys::IoringOp::SyncFileRange;
 
     pub fn build(self) -> Entry {
         let SyncFileRange {
@@ -397,8 +399,8 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.len = len as _;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.sync_range_flags = flags;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.sync_range_flags = flags;
         Entry(sqe)
     }
 );
@@ -417,7 +419,7 @@ opcode!(
         flags: u32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_SENDMSG;
+    pub const CODE = sys::IoringOp::Sendmsg;
 
     pub fn build(self) -> Entry {
         let SendMsg { fd, msg, ioprio, flags } = self;
@@ -426,9 +428,9 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = msg as _;
+        sqe.addr_or_splice_off_in.addr.ptr = msg as _;
         sqe.len = 1;
-        sqe.__bindgen_anon_3.msg_flags = flags;
+        sqe.op_flags.send_flags = rustix::net::SendFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );
@@ -446,7 +448,7 @@ opcode!(
         flags: u32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_RECVMSG;
+    pub const CODE = sys::IoringOp::Recvmsg;
 
     pub fn build(self) -> Entry {
         let RecvMsg { fd, msg, ioprio, flags } = self;
@@ -455,9 +457,9 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = msg as _;
+        sqe.addr_or_splice_off_in.addr.ptr = msg as _;
         sqe.len = 1;
-        sqe.__bindgen_anon_3.msg_flags = flags;
+        sqe.op_flags.recv_flags = rustix::net::RecvFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );
@@ -482,7 +484,7 @@ opcode!(
         flags: types::TimeoutFlags = types::TimeoutFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_TIMEOUT;
+    pub const CODE = sys::IoringOp::Timeout;
 
     pub fn build(self) -> Entry {
         let Timeout { timespec, count, flags } = self;
@@ -490,10 +492,10 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = -1;
-        sqe.__bindgen_anon_2.addr = timespec as _;
+        sqe.addr_or_splice_off_in.addr.ptr = timespec as _;
         sqe.len = 1;
-        sqe.__bindgen_anon_1.off = count as _;
-        sqe.__bindgen_anon_3.timeout_flags = flags.bits();
+        sqe.off_or_addr2.off = count as _;
+        sqe.op_flags.timeout_flags = sys::IoringTimeoutFlags::from_bits(flags.bits()).unwrap();
         Entry(sqe)
     }
 );
@@ -508,7 +510,7 @@ opcode!(
         flags: types::TimeoutFlags = types::TimeoutFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_TIMEOUT_REMOVE;
+    pub const CODE = sys::IoringOp::TimeoutRemove;
 
     pub fn build(self) -> Entry {
         let TimeoutRemove { user_data, flags } = self;
@@ -516,8 +518,8 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = -1;
-        sqe.__bindgen_anon_2.addr = user_data as _;
-        sqe.__bindgen_anon_3.timeout_flags = flags.bits();
+        sqe.addr_or_splice_off_in.addr.ptr = user_data as _;
+        sqe.op_flags.timeout_flags = sys::IoringTimeoutFlags::from_bits(flags.bits()).unwrap();
         Entry(sqe)
     }
 );
@@ -532,7 +534,7 @@ opcode!(
         flags: i32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_ACCEPT;
+    pub const CODE = sys::IoringOp::Accept;
 
     pub fn build(self) -> Entry {
         let Accept { fd, addr, addrlen, flags } = self;
@@ -540,9 +542,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
-        sqe.__bindgen_anon_2.addr = addr as _;
-        sqe.__bindgen_anon_1.addr2 = addrlen as _;
-        sqe.__bindgen_anon_3.accept_flags = flags as _;
+        sqe.addr_or_splice_off_in.addr.ptr = addr as _;
+        sqe.off_or_addr2.addr2.ptr = addrlen as _;
+        sqe.op_flags.accept_flags = rustix::net::AcceptFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );
@@ -556,7 +558,7 @@ opcode!(
         // TODO flags
     }
 
-    pub const CODE = sys::IORING_OP_ASYNC_CANCEL;
+    pub const CODE = sys::IoringOp::AsyncCancel;
 
     pub fn build(self) -> Entry {
         let AsyncCancel { user_data } = self;
@@ -564,7 +566,7 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = -1;
-        sqe.__bindgen_anon_2.addr = user_data as _;
+        sqe.addr_or_splice_off_in.addr.ptr = user_data as _;
         Entry(sqe)
     }
 );
@@ -579,7 +581,7 @@ opcode!(
         flags: types::TimeoutFlags = types::TimeoutFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_LINK_TIMEOUT;
+    pub const CODE = sys::IoringOp::LinkTimeout;
 
     pub fn build(self) -> Entry {
         let LinkTimeout { timespec, flags } = self;
@@ -587,9 +589,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = -1;
-        sqe.__bindgen_anon_2.addr = timespec as _;
+        sqe.addr_or_splice_off_in.addr.ptr = timespec as _;
         sqe.len = 1;
-        sqe.__bindgen_anon_3.timeout_flags = flags.bits();
+        sqe.op_flags.timeout_flags = sys::IoringTimeoutFlags::from_bits(flags.bits()).unwrap();
         Entry(sqe)
     }
 );
@@ -603,7 +605,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_CONNECT;
+    pub const CODE = sys::IoringOp::Connect;
 
     pub fn build(self) -> Entry {
         let Connect { fd, addr, addrlen } = self;
@@ -611,8 +613,8 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
-        sqe.__bindgen_anon_2.addr = addr as _;
-        sqe.__bindgen_anon_1.off = addrlen as _;
+        sqe.addr_or_splice_off_in.addr.ptr = addr as _;
+        sqe.off_or_addr2.off = addrlen as _;
         Entry(sqe)
     }
 );
@@ -629,7 +631,7 @@ opcode!(
         mode: i32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_FALLOCATE;
+    pub const CODE = sys::IoringOp::Fallocate;
 
     pub fn build(self) -> Entry {
         let Fallocate { fd, len, offset, mode } = self;
@@ -637,9 +639,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
-        sqe.__bindgen_anon_2.addr = len as _;
+        sqe.addr_or_splice_off_in.addr.ptr = len as _;
         sqe.len = mode as _;
-        sqe.__bindgen_anon_1.off = offset as _;
+        sqe.off_or_addr2.off = offset as _;
         Entry(sqe)
     }
 );
@@ -654,7 +656,7 @@ opcode!(
         mode: libc::mode_t = 0
     }
 
-    pub const CODE = sys::IORING_OP_OPENAT;
+    pub const CODE = sys::IoringOp::Openat;
 
     pub fn build(self) -> Entry {
         let OpenAt { dirfd, pathname, flags, mode } = self;
@@ -662,9 +664,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = dirfd;
-        sqe.__bindgen_anon_2.addr = pathname as _;
+        sqe.addr_or_splice_off_in.addr.ptr = pathname as _;
         sqe.len = mode;
-        sqe.__bindgen_anon_3.open_flags = flags as _;
+        sqe.op_flags.open_flags = rustix::fs::AtFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );
@@ -676,7 +678,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_CLOSE;
+    pub const CODE = sys::IoringOp::Close;
 
     pub fn build(self) -> Entry {
         let Close { fd } = self;
@@ -699,7 +701,7 @@ opcode!(
         offset: i32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_FILES_UPDATE;
+    pub const CODE = sys::IoringOp::FilesUpdate;
 
     pub fn build(self) -> Entry {
         let FilesUpdate { fds, len, offset } = self;
@@ -707,9 +709,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = -1;
-        sqe.__bindgen_anon_2.addr = fds as _;
+        sqe.addr_or_splice_off_in.addr.ptr = fds as _;
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = offset as _;
+        sqe.off_or_addr2.off = offset as _;
         Entry(sqe)
     }
 );
@@ -725,7 +727,7 @@ opcode!(
         mask: u32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_STATX;
+    pub const CODE = sys::IoringOp::Statx;
 
     pub fn build(self) -> Entry {
         let Statx {
@@ -736,10 +738,10 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = dirfd;
-        sqe.__bindgen_anon_2.addr = pathname as _;
+        sqe.addr_or_splice_off_in.addr.ptr = pathname as _;
         sqe.len = mask;
-        sqe.__bindgen_anon_1.off = statxbuf as _;
-        sqe.__bindgen_anon_3.statx_flags = flags as _;
+        sqe.off_or_addr2.off = statxbuf as _;
+        sqe.op_flags.statx_flags = rustix::fs::AtFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );
@@ -767,11 +769,11 @@ opcode!(
         /// like the `read(2)` and `write(2)` system calls.
         offset: libc::off_t = 0,
         ioprio: u16 = 0,
-        rw_flags: types::RwFlags = 0,
+        rw_flags: types::RwFlags = types::RwFlags::empty(),
         buf_group: u16 = 0
     }
 
-    pub const CODE = sys::IORING_OP_READ;
+    pub const CODE = sys::IoringOp::Read;
 
     pub fn build(self) -> Entry {
         let Read {
@@ -785,11 +787,11 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = buf as _;
+        sqe.addr_or_splice_off_in.addr.ptr = buf as _;
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.rw_flags = rw_flags;
-        sqe.__bindgen_anon_4.buf_group = buf_group;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.rw_flags = rw_flags;
+        sqe.buf.buf_group = buf_group;
         Entry(sqe)
     }
 );
@@ -817,10 +819,10 @@ opcode!(
         /// like the `read(2)` and `write(2)` system calls.
         offset: libc::off_t = 0,
         ioprio: u16 = 0,
-        rw_flags: types::RwFlags = 0
+        rw_flags: types::RwFlags = types::RwFlags::empty()
     }
 
-    pub const CODE = sys::IORING_OP_WRITE;
+    pub const CODE = sys::IoringOp::Write;
 
     pub fn build(self) -> Entry {
         let Write {
@@ -833,10 +835,10 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.ioprio = ioprio;
-        sqe.__bindgen_anon_2.addr = buf as _;
+        sqe.addr_or_splice_off_in.addr.ptr = buf as _;
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.rw_flags = rw_flags;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.rw_flags = rw_flags;
         Entry(sqe)
     }
 );
@@ -846,12 +848,12 @@ opcode!(
     pub struct Fadvise {
         fd: { impl sealed::UseFixed },
         len: { libc::off_t },
-        advice: { i32 },
+        advice: { rustix::fs::Advice },
         ;;
         offset: libc::off_t = 0,
     }
 
-    pub const CODE = sys::IORING_OP_FADVISE;
+    pub const CODE = sys::IoringOp::Fadvise;
 
     pub fn build(self) -> Entry {
         let Fadvise { fd, len, advice, offset } = self;
@@ -860,8 +862,8 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
         sqe.len = len as _;
-        sqe.__bindgen_anon_1.off = offset as _;
-        sqe.__bindgen_anon_3.fadvise_advice = advice as _;
+        sqe.off_or_addr2.off = offset as _;
+        sqe.op_flags.fadvise_advice = advice;
         Entry(sqe)
     }
 );
@@ -871,11 +873,11 @@ opcode!(
     pub struct Madvise {
         addr: { *const libc::c_void },
         len: { libc::off_t },
-        advice: { i32 },
+        advice: { rustix::fs::Advice },
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_MADVISE;
+    pub const CODE = sys::IoringOp::Madvise;
 
     pub fn build(self) -> Entry {
         let Madvise { addr, len, advice } = self;
@@ -883,9 +885,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = -1;
-        sqe.__bindgen_anon_2.addr = addr as _;
+        sqe.addr_or_splice_off_in.addr.ptr = addr as _;
         sqe.len = len as _;
-        sqe.__bindgen_anon_3.fadvise_advice = advice as _;
+        sqe.op_flags.fadvise_advice = advice as _;
         Entry(sqe)
     }
 );
@@ -900,7 +902,7 @@ opcode!(
         flags: i32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_SEND;
+    pub const CODE = sys::IoringOp::Send;
 
     pub fn build(self) -> Entry {
         let Send { fd, buf, len, flags } = self;
@@ -908,9 +910,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
-        sqe.__bindgen_anon_2.addr = buf as _;
+        sqe.addr_or_splice_off_in.addr.ptr = buf as _;
         sqe.len = len;
-        sqe.__bindgen_anon_3.msg_flags = flags as _;
+        sqe.op_flags.send_flags = rustix::net::SendFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );
@@ -926,7 +928,7 @@ opcode!(
         buf_group: u16 = 0
     }
 
-    pub const CODE = sys::IORING_OP_RECV;
+    pub const CODE = sys::IoringOp::Recv;
 
     pub fn build(self) -> Entry {
         let Recv { fd, buf, len, flags, buf_group } = self;
@@ -934,10 +936,10 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd);
-        sqe.__bindgen_anon_2.addr = buf as _;
+        sqe.addr_or_splice_off_in.addr.ptr = buf as _;
         sqe.len = len;
-        sqe.__bindgen_anon_3.msg_flags = flags as _;
-        sqe.__bindgen_anon_4.buf_group = buf_group;
+        sqe.op_flags.recv_flags = rustix::net::RecvFlags::from_bits(flags as _).unwrap();
+        sqe.buf.buf_group = buf_group;
         Entry(sqe)
     }
 );
@@ -951,7 +953,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_OPENAT2;
+    pub const CODE = sys::IoringOp::Openat2;
 
     pub fn build(self) -> Entry {
         let OpenAt2 { dirfd, pathname, how } = self;
@@ -959,9 +961,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = dirfd;
-        sqe.__bindgen_anon_2.addr = pathname as _;
+        sqe.addr_or_splice_off_in.addr.ptr = pathname as _;
         sqe.len = mem::size_of::<sys::open_how>() as _;
-        sqe.__bindgen_anon_1.off = how as _;
+        sqe.off_or_addr2.off = how as _;
         Entry(sqe)
     }
 );
@@ -976,7 +978,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_EPOLL_CTL;
+    pub const CODE = sys::IoringOp::EpollCtl;
 
     pub fn build(self) -> Entry {
         let EpollCtl { epfd, fd, op, ev } = self;
@@ -984,9 +986,9 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = epfd);
-        sqe.__bindgen_anon_2.addr = ev as _;
+        sqe.addr_or_splice_off_in.addr.ptr = ev as _;
         sqe.len = op as _;
-        sqe.__bindgen_anon_1.off = fd as _;
+        sqe.off_or_addr2.off = fd as _;
         Entry(sqe)
     }
 );
@@ -1009,7 +1011,7 @@ opcode!(
         flags: u32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_SPLICE;
+    pub const CODE = sys::IoringOp::Splice;
 
     pub fn build(self) -> Entry {
         let Splice { fd_in, off_in, fd_out, off_out, len, mut flags } = self;
@@ -1018,18 +1020,18 @@ opcode!(
         sqe.opcode = Self::CODE;
         assign_fd!(sqe.fd = fd_out);
         sqe.len = len;
-        sqe.__bindgen_anon_1.off = off_out as _;
+        sqe.off_or_addr2.off = off_out as _;
 
-        sqe.__bindgen_anon_5.splice_fd_in = match fd_in {
+        sqe.splice_fd_in_or_file_index.splice_fd_in = match fd_in {
             sealed::Target::Fd(fd) => fd,
             sealed::Target::Fixed(i) => {
-                flags |= sys::SPLICE_F_FD_IN_FIXED;
+                flags |= sys::SpliceFlags::FD_IN_FIXED.bits();
                 i as _
             }
         };
 
-        sqe.__bindgen_anon_2.splice_off_in = off_in as _;
-        sqe.__bindgen_anon_3.splice_flags = flags;
+        sqe.addr_or_splice_off_in.splice_off_in = off_in as _;
+        sqe.op_flags.splice_flags = sys::SpliceFlags::from_bits(flags).unwrap();
         Entry(sqe)
     }
 );
@@ -1050,7 +1052,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_PROVIDE_BUFFERS;
+    pub const CODE = sys::IoringOp::ProvideBuffers;
 
     pub fn build(self) -> Entry {
         let ProvideBuffers { addr, len, nbufs, bgid, bid } = self;
@@ -1058,10 +1060,10 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = nbufs as _;
-        sqe.__bindgen_anon_2.addr = addr as _;
+        sqe.addr_or_splice_off_in.addr.ptr = addr as _;
         sqe.len = len as _;
-        sqe.__bindgen_anon_1.off = bid as _;
-        sqe.__bindgen_anon_4.buf_group = bgid;
+        sqe.off_or_addr2.off = bid as _;
+        sqe.buf.buf_group = bgid;
         Entry(sqe)
     }
 );
@@ -1078,7 +1080,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_REMOVE_BUFFERS;
+    pub const CODE = sys::IoringOp::RemoveBuffers;
 
     pub fn build(self) -> Entry {
         let RemoveBuffers { nbufs, bgid } = self;
@@ -1086,7 +1088,7 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = nbufs as _;
-        sqe.__bindgen_anon_4.buf_group = bgid;
+        sqe.buf.buf_group = bgid;
         Entry(sqe)
     }
 );
@@ -1106,7 +1108,7 @@ opcode!(
         flags: u32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_TEE;
+    pub const CODE = sys::IoringOp::Tee;
 
     pub fn build(self) -> Entry {
         let Tee { fd_in, fd_out, len, mut flags } = self;
@@ -1117,15 +1119,15 @@ opcode!(
         assign_fd!(sqe.fd = fd_out);
         sqe.len = len;
 
-        sqe.__bindgen_anon_5.splice_fd_in = match fd_in {
+        sqe.splice_fd_in_or_file_index.splice_fd_in = match fd_in {
             sealed::Target::Fd(fd) => fd,
             sealed::Target::Fixed(i) => {
-                flags |= sys::SPLICE_F_FD_IN_FIXED;
+                flags |= sys::SpliceFlags::FD_IN_FIXED.bits();
                 i as _
             }
         };
 
-        sqe.__bindgen_anon_3.splice_flags = flags;
+        sqe.op_flags.splice_flags = sys::SpliceFlags::from_bits(flags).unwrap();
 
         Entry(sqe)
     }
@@ -1141,7 +1143,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_SHUTDOWN;
+    pub const CODE = sys::IoringOp::Shutdown;
 
     pub fn build(self) -> Entry {
         let Shutdown { fd, how } = self;
@@ -1165,7 +1167,7 @@ opcode!(
         flags: u32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_RENAMEAT;
+    pub const CODE = sys::IoringOp::Renameat;
 
     pub fn build(self) -> Entry {
         let RenameAt {
@@ -1177,10 +1179,10 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = olddirfd;
-        sqe.__bindgen_anon_2.addr = oldpath as _;
+        sqe.addr_or_splice_off_in.addr.ptr = oldpath as _;
         sqe.len = newdirfd as _;
-        sqe.__bindgen_anon_1.off = newpath as _;
-        sqe.__bindgen_anon_3.rename_flags = flags;
+        sqe.off_or_addr2.off = newpath as _;
+        sqe.op_flags.rename_flags = rustix::fs::RenameFlags::from_bits(flags).unwrap();
         Entry(sqe)
     }
 );
@@ -1194,7 +1196,7 @@ opcode!(
         flags: i32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_UNLINKAT;
+    pub const CODE = sys::IoringOp::Unlinkat;
 
     pub fn build(self) -> Entry {
         let UnlinkAt { dirfd, pathname, flags } = self;
@@ -1202,8 +1204,8 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = dirfd;
-        sqe.__bindgen_anon_2.addr = pathname as _;
-        sqe.__bindgen_anon_3.unlink_flags = flags as _;
+        sqe.addr_or_splice_off_in.addr.ptr = pathname as _;
+        sqe.op_flags.unlink_flags = rustix::fs::AtFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );
@@ -1222,7 +1224,7 @@ opcode!(
         mode: libc::mode_t = 0
     }
 
-    pub const CODE = sys::IORING_OP_MKDIRAT;
+    pub const CODE = sys::IoringOp::Mkdirat;
 
     pub fn build(self) -> Entry {
         let MkDirAt { dirfd, pathname, mode } = self;
@@ -1230,7 +1232,7 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = dirfd;
-        sqe.__bindgen_anon_2.addr = pathname as _;
+        sqe.addr_or_splice_off_in.addr.ptr = pathname as _;
         sqe.len = mode;
         Entry(sqe)
     }
@@ -1248,7 +1250,7 @@ opcode!(
         ;;
     }
 
-    pub const CODE = sys::IORING_OP_SYMLINKAT;
+    pub const CODE = sys::IoringOp::Symlinkat;
 
     pub fn build(self) -> Entry {
         let SymlinkAt { newdirfd, target, linkpath } = self;
@@ -1256,8 +1258,8 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = newdirfd;
-        sqe.__bindgen_anon_2.addr = target as _;
-        sqe.__bindgen_anon_1.addr2 = linkpath as _;
+        sqe.addr_or_splice_off_in.addr.ptr = target as _;
+        sqe.off_or_addr2.addr2.ptr = linkpath as _;
         Entry(sqe)
     }
 );
@@ -1276,7 +1278,7 @@ opcode!(
         flags: i32 = 0
     }
 
-    pub const CODE = sys::IORING_OP_LINKAT;
+    pub const CODE = sys::IoringOp::Linkat;
 
     pub fn build(self) -> Entry {
         let LinkAt { olddirfd, oldpath, newdirfd, newpath, flags } = self;
@@ -1284,10 +1286,10 @@ opcode!(
         let mut sqe = sqe_zeroed();
         sqe.opcode = Self::CODE;
         sqe.fd = olddirfd as _;
-        sqe.__bindgen_anon_2.addr = oldpath as _;
+        sqe.addr_or_splice_off_in.addr.ptr = oldpath as _;
         sqe.len = newdirfd as _;
-        sqe.__bindgen_anon_1.addr2 = newpath as _;
-        sqe.__bindgen_anon_3.hardlink_flags = flags as _;
+        sqe.off_or_addr2.addr2.ptr = newpath as _;
+        sqe.op_flags.hardlink_flags = rustix::fs::AtFlags::from_bits(flags as _).unwrap();
         Entry(sqe)
     }
 );

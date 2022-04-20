@@ -50,7 +50,7 @@ use std::marker::PhantomData;
 #[cfg(feature = "unstable")]
 use crate::util::cast_ptr;
 
-pub use sys::__kernel_rwf_t as RwFlags;
+pub use rustix::io::ReadWriteFlags as RwFlags;
 
 /// Opaque types, you should use [`statx`](struct@libc::statx) instead.
 #[repr(C)]
@@ -79,17 +79,17 @@ pub struct Fixed(pub u32);
 bitflags! {
     /// Options for [`Timeout`](super::Timeout).
     pub struct TimeoutFlags: u32 {
-        const ABS = sys::IORING_TIMEOUT_ABS;
+        const ABS = sys::IoringTimeoutFlags::ABS.bits();
 
         #[cfg(feature = "unstable")]
-        const UPDATE = sys::IORING_TIMEOUT_UPDATE;
+        const UPDATE = sys::IoringTimeoutFlags::UPDATE.bits();
     }
 }
 
 bitflags! {
     /// Options for [`Fsync`](super::Fsync).
     pub struct FsyncFlags: u32 {
-        const DATASYNC = sys::IORING_FSYNC_DATASYNC;
+        const DATASYNC = sys::IoringFsyncFlags::DATASYNC.bits();
     }
 }
 
@@ -104,7 +104,7 @@ impl OpenHow {
         OpenHow(sys::open_how {
             flags: 0,
             mode: 0,
-            resolve: 0,
+            resolve: rustix::fs::ResolveFlags::empty(),
         })
     }
 
@@ -118,20 +118,26 @@ impl OpenHow {
         self
     }
 
-    pub const fn resolve(mut self, resolve: u64) -> Self {
+    pub const fn resolve(mut self, resolve: rustix::fs::ResolveFlags) -> Self {
         self.0.resolve = resolve;
         self
     }
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy)]
 #[repr(transparent)]
-pub struct Timespec(sys::__kernel_timespec);
+pub struct Timespec(rustix::time::Timespec);
+
+impl Default for Timespec {
+    fn default() -> Self {
+        unsafe { core::mem::zeroed() }
+    }
+}
 
 impl Timespec {
     #[inline]
     pub const fn new() -> Self {
-        Timespec(sys::__kernel_timespec {
+        Timespec(rustix::time::Timespec {
             tv_sec: 0,
             tv_nsec: 0,
         })

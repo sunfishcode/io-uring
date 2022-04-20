@@ -380,7 +380,7 @@ pub fn test_tcp_buffer_select(ring: &mut IoUring, test: &Test) -> anyhow::Result
     match bid {
         0 => assert_eq!(&buf0[..256], &input[1024..]),
         1 => assert_eq!(&buf1[..256], &input[1024..]),
-        _ => panic!("{}", cqe.flags()),
+        _ => panic!("{:?}", cqe.flags()),
     }
 
     // remove bufs

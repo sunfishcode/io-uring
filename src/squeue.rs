@@ -40,21 +40,21 @@ bitflags! {
         /// When this flag is specified,
         /// `fd` is an index into the files array registered with the io_uring instance.
         #[doc(hidden)]
-        const FIXED_FILE = 1 << sys::IOSQE_FIXED_FILE_BIT;
+        const FIXED_FILE =  sys::IoringSqeFlags::FIXED_FILE.bits();
 
         /// When this flag is specified,
         /// the SQE will not be started before previously submitted SQEs have completed,
         /// and new SQEs will not be started before this one completes.
-        const IO_DRAIN = 1 << sys::IOSQE_IO_DRAIN_BIT;
+        const IO_DRAIN =  sys::IoringSqeFlags::IO_DRAIN.bits();
 
         /// When this flag is specified,
         /// it forms a link with the next SQE in the submission ring.
         /// That next SQE will not be started before this one completes.
-        const IO_LINK = 1 << sys::IOSQE_IO_LINK_BIT;
+        const IO_LINK =  sys::IoringSqeFlags::IO_LINK.bits();
 
         /// Like [`IO_LINK`](Self::IO_LINK), but it doesn’t sever regardless of the completion
         /// result.
-        const IO_HARDLINK = 1 << sys::IOSQE_IO_HARDLINK_BIT;
+        const IO_HARDLINK =  sys::IoringSqeFlags::IO_HARDLINK.bits();
 
         /// Normal operation for io_uring is to try and issue an sqe as non-blocking first,
         /// and if that fails, execute it in an async manner.
@@ -62,7 +62,7 @@ bitflags! {
         /// To support more efficient overlapped operation of requests
         /// that the application knows/assumes will always (or most of the time) block,
         /// the application can ask for an sqe to be issued async from the start.
-        const ASYNC = 1 << sys::IOSQE_ASYNC_BIT;
+        const ASYNC =  sys::IoringSqeFlags::ASYNC.bits();
 
         /// Conceptually the kernel holds a set of buffers organized into groups. When you issue a
         /// request with this flag and set `buf_group` to a valid buffer group ID (e.g.
@@ -90,7 +90,7 @@ bitflags! {
         ///
         /// Requires the `unstable` feature.
         #[cfg(feature = "unstable")]
-        const BUFFER_SELECT = 1 << sys::IOSQE_BUFFER_SELECT_BIT;
+        const BUFFER_SELECT =  sys::IoringSqeFlags::BUFFER_SELECT.bits();
     }
 }
 
@@ -161,7 +161,10 @@ impl SubmissionQueue<'_> {
     #[inline]
     pub fn need_wakeup(&self) -> bool {
         unsafe {
-            (*self.queue.flags).load(atomic::Ordering::Acquire) & sys::IORING_SQ_NEED_WAKEUP != 0
+            sys::IoringSqFlags::from_bits_unchecked(
+                (*self.queue.flags).load(atomic::Ordering::Acquire),
+            )
+            .contains(sys::IoringSqFlags::NEED_WAKEUP)
         }
     }
 
@@ -174,7 +177,10 @@ impl SubmissionQueue<'_> {
     /// Returns `true` if the completion queue ring is overflown.
     pub fn cq_overflow(&self) -> bool {
         unsafe {
-            (*self.queue.flags).load(atomic::Ordering::Acquire) & sys::IORING_SQ_CQ_OVERFLOW != 0
+            sys::IoringSqFlags::from_bits_unchecked(
+                (*self.queue.flags).load(atomic::Ordering::Acquire),
+            )
+            .contains(sys::IoringSqFlags::CQ_OVERFLOW)
         }
     }
 
@@ -262,7 +268,7 @@ impl Entry {
     /// Set the submission event's [flags](Flags).
     #[inline]
     pub fn flags(mut self, flags: Flags) -> Entry {
-        self.0.flags |= flags.bits();
+        self.0.flags |= sys::IoringSqeFlags::from_bits(flags.bits()).unwrap();
         self
     }
 
@@ -270,7 +276,15 @@ impl Entry {
     /// through into the [completion queue entry](crate::cqueue::Entry::user_data).
     #[inline]
     pub fn user_data(mut self, user_data: u64) -> Entry {
-        self.0.user_data = user_data;
+        self.0.user_data = sys::io_uring_user_data::from_u64(user_data);
+        self
+    }
+
+    /// Set the user data. This is an application-supplied value that will be passed straight
+    /// through into the [completion queue entry](crate::cqueue::Entry::user_data).
+    #[inline]
+    pub fn user_data_ptr(mut self, user_data: *mut libc::c_void) -> Entry {
+        self.0.user_data = sys::io_uring_user_data::from_ptr(user_data);
         self
     }
 

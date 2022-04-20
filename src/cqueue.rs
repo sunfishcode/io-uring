@@ -98,8 +98,10 @@ impl CompletionQueue<'_> {
     #[cfg(feature = "unstable")]
     pub fn eventfd_disabled(&self) -> bool {
         unsafe {
-            (*self.queue.flags).load(atomic::Ordering::Acquire) & sys::IORING_CQ_EVENTFD_DISABLED
-                != 0
+            sys::IoringCqFlags::from_bits_unchecked(
+                (*self.queue.flags).load(atomic::Ordering::Acquire),
+            )
+            .contains(sys::IoringCqFlags::EVENTFD_DISABLED)
         }
     }
 
@@ -193,7 +195,14 @@ impl Entry {
     /// [`Entry::user_data`](crate::squeue::Entry::user_data) on the submission queue event.
     #[inline]
     pub fn user_data(&self) -> u64 {
-        self.0.user_data
+        self.0.user_data.u64_()
+    }
+
+    /// The user data of the request, as set by
+    /// [`Entry::user_data`](crate::squeue::Entry::user_data) on the submission queue event.
+    #[inline]
+    pub fn user_data_ptr(&self) -> *mut libc::c_void {
+        self.0.user_data.ptr()
     }
 
     /// Metadata related to the operation.
@@ -202,7 +211,7 @@ impl Entry {
     /// - Storing the selected buffer ID, if one was selected. See
     /// [`BUFFER_SELECT`](crate::squeue::Flags::BUFFER_SELECT) for more info.
     #[inline]
-    pub fn flags(&self) -> u32 {
+    pub fn flags(&self) -> sys::IoringCqeFlags {
         self.0.flags
     }
 }
@@ -218,9 +227,9 @@ impl fmt::Debug for Entry {
 }
 
 #[cfg(feature = "unstable")]
-pub fn buffer_select(flags: u32) -> Option<u16> {
-    if flags & sys::IORING_CQE_F_BUFFER != 0 {
-        let id = flags >> sys::IORING_CQE_BUFFER_SHIFT;
+pub fn buffer_select(flags: sys::IoringCqeFlags) -> Option<u16> {
+    if flags.contains(sys::IoringCqeFlags::BUFFER) {
+        let id = flags.bits() >> sys::IORING_CQE_BUFFER_SHIFT;
 
         // FIXME
         //

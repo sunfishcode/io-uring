@@ -19,12 +19,13 @@ members = [ "io-uring-test", "io-uring-bench" ]
 [features]
 unstable = []
 overwrite = [ "bindgen" ]
-direct-syscall = [ "sc" ]
+#direct-syscall = [ "sc" ]
 
 [dependencies]
 bitflags = "1"
 libc = { version = "0.2.98", default-features = false }
-sc = { version = "0.2", optional = true }
+#sc = { version = "0.2", optional = true }
+rustix = { git = "https://github.com/bytecodealliance/rustix", branch = "v0.34.x", features = ["io_uring"] }
 
 [build-dependencies]
 bindgen = { version = "0.59", optional = true }

@@ -1,24 +1,22 @@
 //! Some register syscall related types or parameters.
 
+use rustix::fd::AsFd;
+#[cfg(feature = "unstable")]
 use std::os::unix::io::RawFd;
 use std::{fmt, io, mem, ptr};
 
 use crate::sys;
 
-pub(crate) fn execute(
-    fd: RawFd,
-    opcode: libc::c_uint,
+pub(crate) fn execute<Fd: AsFd>(
+    fd: Fd,
+    opcode: sys::IoringRegisterOp,
     arg: *const libc::c_void,
     len: libc::c_uint,
-) -> io::Result<i32> {
+) -> io::Result<()> {
     unsafe {
-        let ret = sys::io_uring_register(fd, opcode, arg, len);
-        if ret >= 0 {
-            Ok(ret)
-        } else {
-            Err(io::Error::last_os_error())
-        }
+        sys::io_uring_register(fd.as_fd(), opcode, arg, len)?;
     }
+    Ok(())
 }
 
 /// Information about what `io_uring` features the kernel supports.
@@ -54,13 +52,15 @@ impl Probe {
     }
 
     /// Get whether a specific opcode is supported.
-    pub fn is_supported(&self, opcode: u8) -> bool {
+    pub fn is_supported(&self, opcode: sys::IoringOp) -> bool {
         unsafe {
             let probe = &*self.0.as_ptr();
 
-            if opcode <= probe.last_op {
+            if opcode as u32 <= probe.last_op as u32 {
                 let ops = probe.ops.as_slice(Self::COUNT);
-                ops[opcode as usize].flags & (sys::IO_URING_OP_SUPPORTED as u16) != 0
+                ops[opcode as usize]
+                    .flags
+                    .contains(sys::IoringOpFlags::SUPPORTED)
             } else {
                 false
             }
@@ -90,7 +90,7 @@ impl fmt::Debug for Probe {
         let list = unsafe { probe.ops.as_slice(probe.last_op as usize + 1) };
         let list = list
             .iter()
-            .filter(|op| op.flags & (sys::IO_URING_OP_SUPPORTED as u16) != 0)
+            .filter(|op| op.flags.contains(sys::IoringOpFlags::SUPPORTED))
             .map(|&op| Op(op));
 
         f.debug_set().entries(list).finish()
@@ -127,35 +127,35 @@ fn res_zeroed() -> sys::io_uring_restriction {
 #[cfg(feature = "unstable")]
 impl Restriction {
     /// Allow an `io_uring_register` opcode.
-    pub fn register_op(op: u8) -> Restriction {
+    pub fn register_op(op: sys::IoringRegisterOp) -> Restriction {
         let mut res = res_zeroed();
-        res.opcode = sys::IORING_RESTRICTION_REGISTER_OP as _;
-        res.__bindgen_anon_1.register_op = op;
+        res.opcode = sys::IoringRestrictionOp::RegisterOp;
+        res.register_or_sqe_op_or_sqe_flags.register_op = op;
         Restriction(res)
     }
 
     /// Allow a submission queue event opcode.
-    pub fn sqe_op(op: u8) -> Restriction {
+    pub fn sqe_op(op: sys::IoringOp) -> Restriction {
         let mut res = res_zeroed();
-        res.opcode = sys::IORING_RESTRICTION_SQE_OP as _;
-        res.__bindgen_anon_1.sqe_op = op;
+        res.opcode = sys::IoringRestrictionOp::SqeOp;
+        res.register_or_sqe_op_or_sqe_flags.sqe_op = op;
         Restriction(res)
     }
 
     /// Allow the given [submission queue event flags](crate::squeue::Flags).
-    pub fn sqe_flags_allowed(flags: u8) -> Restriction {
+    pub fn sqe_flags_allowed(flags: sys::IoringSqeFlags) -> Restriction {
         let mut res = res_zeroed();
-        res.opcode = sys::IORING_RESTRICTION_SQE_FLAGS_ALLOWED as _;
-        res.__bindgen_anon_1.sqe_flags = flags;
+        res.opcode = sys::IoringRestrictionOp::SqeFlagsAllowed;
+        res.register_or_sqe_op_or_sqe_flags.sqe_flags = flags;
         Restriction(res)
     }
 
     /// Require the given [submission queue event flags](crate::squeue::Flags). These flags must be
     /// set on every submission.
-    pub fn sqe_flags_required(flags: u8) -> Restriction {
+    pub fn sqe_flags_required(flags: sys::IoringSqeFlags) -> Restriction {
         let mut res = res_zeroed();
-        res.opcode = sys::IORING_RESTRICTION_SQE_FLAGS_REQUIRED as _;
-        res.__bindgen_anon_1.sqe_flags = flags;
+        res.opcode = sys::IoringRestrictionOp::SqeFlagsRequired;
+        res.register_or_sqe_op_or_sqe_flags.sqe_flags = flags;
         Restriction(res)
     }
 }
@@ -165,5 +165,8 @@ impl Restriction {
 ///
 /// File descriptors can be skipped if they are set to `SKIP_FILE`.
 /// Skipping an fd will not touch the file associated with the previous fd at that index.
+// FIXME: This should use `io_uring_register_files_skip`, but we need it
+// to be a `const fn`. Which needs `borrow_raw` to be a `const fn`. Which is an
+// open PR.
 #[cfg(feature = "unstable")]
-pub const SKIP_FILE: RawFd = sys::IORING_REGISTER_FILES_SKIP;
+pub const SKIP_FILE: RawFd = -2;
