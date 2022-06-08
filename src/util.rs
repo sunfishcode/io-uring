@@ -1,7 +1,8 @@
 use std::os::unix::io::{AsRawFd, FromRawFd, IntoRawFd, RawFd};
 use std::sync::atomic;
 use std::{io, ptr};
-use rustix::io::{ProtFlags, MapFlags, Advice, OwnedFd};
+use rustix::mm::{ProtFlags, MapFlags, Advice};
+use rustix::io::OwnedFd;
 
 /// A region of memory mapped using `mmap(2)`.
 pub struct Mmap {
@@ -13,7 +14,7 @@ impl Mmap {
     /// Map `len` bytes starting from the offset `offset` in the file descriptor `fd` into memory.
     pub fn new(fd: &Fd, offset: u64, len: usize) -> io::Result<Mmap> {
         unsafe {
-            let addr = rustix::io::mmap(
+            let addr = rustix::mm::mmap(
                 ptr::null_mut(),
                 len,
                 ProtFlags::READ | ProtFlags::WRITE,
@@ -30,7 +31,7 @@ impl Mmap {
     /// Do not make the stored memory accessible by child processes after a `fork`.
     pub fn dontfork(&self) -> io::Result<()> {
         unsafe {
-            rustix::io::madvise(self.addr.as_ptr(), self.len, Advice::LinuxDontFork)?;
+            rustix::mm::madvise(self.addr.as_ptr(), self.len, Advice::LinuxDontFork)?;
         }
         Ok(())
     }
@@ -51,7 +52,7 @@ impl Mmap {
 impl Drop for Mmap {
     fn drop(&mut self) {
         unsafe {
-            rustix::io::munmap(self.addr.as_ptr(), self.len).unwrap();
+            rustix::mm::munmap(self.addr.as_ptr(), self.len).unwrap();
         }
     }
 }

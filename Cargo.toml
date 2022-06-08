@@ -25,7 +25,7 @@ overwrite = [ "bindgen" ]
 bitflags = "1"
 libc = { version = "0.2.98", default-features = false }
 #sc = { version = "0.2", optional = true }
-rustix = { git = "https://github.com/bytecodealliance/rustix", branch = "v0.34.x", features = ["io_uring"] }
+rustix = { version = "0.35.6-beta.2", features = ["io_uring", "mm", "time"] }
 
 [build-dependencies]
 bindgen = { version = "0.59", optional = true }
